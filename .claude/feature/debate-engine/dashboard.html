@@ -1,0 +1,347 @@
+<title>Feature</title>
+<style>
+:root{--bg:#f7f7f5;--panel:#fff;--ink:#1a1a18;--muted:#6b6b66;--line:#e2e2dd;
+--good:#1f5f4f;--bad:#a3312a;--radius:8px;
+--autorefresh-bg:rgba(31,95,79,.14);--refresh-bg:rgba(42,95,143,.14);--refresh-ink:#2a5f8f}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--panel:#1f2125;--ink:#ececea;
+--muted:#9a9a94;--line:#32343a;--good:#4fb59a;--bad:#e07b74;
+--autorefresh-bg:rgba(79,181,154,.18);--refresh-bg:rgba(111,168,220,.18);--refresh-ink:#8fc1ef}}
+*{box-sizing:border-box;overflow-wrap:break-word}
+body{margin:0;background:var(--bg);color:var(--ink);
+font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+/* Grid tracks default to fitting their content's full, unbroken width -- a single
+   long token (a file path, a backtick-quoted identifier) anywhere in a panel would
+   otherwise stretch the whole page past max-width, no matter how long the gap or how
+   small every other panel is. min-width:0 is what lets a grid item shrink below that
+   and actually wrap instead. Confirmed live: this is what was making every real plan
+   (which is full of exactly these long tokens) render many times wider than the
+   viewport, independent of the DOCTYPE/viewport fix. */
+main{max-width:1300px;margin:0 auto;padding:24px;display:grid;gap:20px}
+main>*{min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);
+border-radius:var(--radius);padding:20px 22px}
+h1{margin:0 0 4px;font-size:21px;letter-spacing:-.01em}
+h2{margin:22px 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+h2:first-of-type{margin-top:14px}
+.panel>p{line-height:1.65;margin:0 0 4px}
+.totals{display:flex;gap:32px;flex-wrap:wrap;margin:12px 0}
+.total .n{font-size:26px;font-variant-numeric:tabular-nums}
+.total .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+details{margin-top:8px}summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tabs button{font:inherit;font-size:13px;padding:5px 12px;border-radius:999px;
+border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--good);border-color:var(--good);color:var(--panel)}
+.scroll{overflow-x:auto}
+/* table-layout:auto (the default) sizes a column from its content's own natural
+   width -- for a nowrap+ellipsis cell, that is the FULL unwrapped text, which is
+   exactly the width ellipsis is meant to avoid ever reaching. It is a well-known
+   gap in the auto algorithm, not a quirk of this page: the standard fix is
+   table-layout:fixed, with every narrow column given an explicit width so the
+   description column (the one left unset) absorbs the rest and actually holds
+   .desc to it. Confirmed live: without this, a single real task description
+   dragged the whole table into a wide horizontal scrollbar regardless of how
+   short every other column's content was. */
+table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}
+/* The status column's own text ("In progress &middot; running long.") is real
+   prose, not a single short token -- 28px forced it to wrap, and the page's own
+   global overflow-wrap:break-word (needed elsewhere, see main>* above) then broke
+   it mid-word instead of at a space. Wide enough for the longest badge on two
+   lines, with normal word-wrapping restored just for this column. */
+th:first-child,td:first-child{width:112px;overflow-wrap:normal}
+th:nth-child(2),td:nth-child(2){width:52px}
+th:nth-child(4),td:nth-child(4){width:160px}
+th:nth-child(5),td:nth-child(5){width:300px}
+th,td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.good .dot,.dot.good{background:var(--good)}.bad .dot,.dot.bad{background:var(--bad)}
+.neutral .dot,.dot.neutral{background:var(--muted)}
+.sub td{border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);padding-top:0}
+/* .desc is a <span> -- inline by default, and width/overflow/text-overflow are all
+   spec-ignored on a plain inline box, so none of this ever actually truncated
+   anything on its own. display:block (now that its <td> has a real fixed width to
+   fill, from table-layout:fixed above) is what makes the rest of this rule do
+   anything at all. */
+.desc{display:block;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.desc.open{white-space:normal;overflow:visible}
+.more{font:inherit;font-size:11px;border:none;background:none;color:var(--muted);cursor:pointer}
+.tag{display:inline-block;padding:0 6px;margin-right:4px;border:1px solid var(--line);
+border-radius:999px;font-size:11px;font-variant-numeric:tabular-nums}
+.banner{border-left:3px solid var(--bad);padding:10px 14px;background:var(--panel);
+border-radius:var(--radius);margin-bottom:14px}
+.fail{background:rgba(163,49,42,.09);padding:6px 9px;border-radius:6px;margin-top:6px}
+ul,ol{margin:8px 0;padding-left:24px}
+li{margin:8px 0;line-height:1.6}
+/* Requirements and Assumptions are both "one short id, one longer text" --
+   the same shape a table row has, so they get the same row-grid treatment
+   the task table already uses (a border between rows, an aligned label
+   column), instead of reading as a looser bulleted paragraph. Plain bullet
+   lists (Findings, UAT checks) keep the plainer rule above. The id badge
+   reuses .tag -- the exact same pill the task table's own id column uses now
+   -- so a reader learns one visual language for "this is an id" instead of
+   three different ones. */
+.items{list-style:none;margin:8px 0;padding:0;display:grid;gap:0}
+.items li{margin:0;display:grid;grid-template-columns:34px 1fr;gap:10px;
+padding:10px 2px;border-bottom:1px solid var(--line);line-height:1.6}
+.items li:last-child{border-bottom:none}
+/* A grid item's own display:inline-block is not enough to stop it stretching
+   to fill its whole cell -- CSS Grid stretches an item's box to its area by
+   default regardless, so the pill's border was being drawn around the full
+   34px-by-row-height cell instead of snugly around "A1". justify/align-self
+   opt back out of that stretch. */
+.items li>:first-child{justify-self:start;align-self:start}
+.note{font-size:12px;color:var(--muted)}
+.btn{display:inline-block;padding:8px 16px;margin:2px 0;border-radius:8px;
+background:var(--good);color:var(--panel);text-decoration:none;font-size:13px;font-weight:600}
+.btn:hover{opacity:.85}
+/* Same shape for both so they read as a pair of related controls; a different
+   background on each is the only thing telling them apart at a glance -- a toggle
+   and an immediate action should not look identical. */
+.ghost-btn{font:inherit;font-size:12px;padding:4px 12px;border-radius:999px;
+border:none;cursor:pointer}
+.ghost-btn.autorefresh{background:var(--autorefresh-bg);color:var(--good)}
+.ghost-btn.refresh-now{background:var(--refresh-bg);color:var(--refresh-ink)}
+.ghost-btn:hover{opacity:.8}
+.refresh-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}
+pre{font-family:inherit;white-space:pre-wrap;word-break:break-word;margin:0;line-height:1.65}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.9em;
+background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+/* A retrospective's own markdown headings nest two levels below this section's own
+   h2, so "What happened" reads as a sub-heading of "Retrospective", never a peer of
+   it or of another panel's h2 entirely. */
+.prose h3{margin:18px 0 8px;font-size:15px}
+.prose h4,.prose h5,.prose h6{margin:14px 0 6px;font-size:14px;color:var(--muted)}
+.prose p{margin:8px 0;line-height:1.65}
+/* A bullet whose own text opens with a bold phrase is using it as the item's own
+   title, not as mid-sentence emphasis -- block-level + its own line is what actually
+   separates the two instead of letting the body run on immediately after it. */
+.prose .bullet-title{display:block;margin-bottom:2px}
+.prose .bullet-body{display:block}
+</style>
+<main>
+<section class="panel">
+<h1>Feature</h1>
+<p class="note">Status done &middot; cycle 1 of 3</p>
+<p class="note refresh-controls" data-feature-done><button type="button" id="autorefresh" class="ghost-btn autorefresh" aria-pressed="false">Auto refresh off</button> <button type="button" id="refresh-now" class="ghost-btn refresh-now">Refresh now</button> &middot; <span data-refresh-in>5m 0s</span><span data-refresh-off-note hidden>Auto-refresh is off.</span></p>
+<h2>Goal</h2><p>A Python engine that runs structured, evidence-grounded debates: a user names a topic (narrow or
+wide), the engine forms two 3-agent teams (FOR / AGAINST), and feeds them questions one at a time —
+supplied directly or self-generated in auto mode — through a researched debate pipeline (team
+huddle, openings, a budgeted rebuttal loop, closings, judge verdict). Every agent turn is a single
+non-interactive call to the <code>omp</code> CLI, so the engine never talks to a model provider directly and
+stays provider-agnostic by construction; <code>omp</code>&#x27;s own <code>web_search</code> tool is how agents ground claims in
+real evidence. The engine is usable today as an omp skill (CLI + <code>SKILL.md</code>). A Discord bot is
+explicitly out of scope for this feature — a deliberate follow-up once this engine is proven.</p>
+<h2>Requirements</h2><ul class="items"><li><span class="tag">1</span><span>Starting a debate requires a topic (<code>debate start --topic &quot;&lt;text&gt;&quot;</code>); an empty or
+   whitespace-only topic is rejected with a clear error, not silently accepted.</span></li><li><span class="tag">2</span><span>Starting a debate creates exactly two teams of exactly three agents: FOR and AGAINST, each built
+   from three distinct in-team roles — Lead (delivers openings and closings), Researcher (produces
+   the team&#x27;s evidence brief), Rebuttal (argues the live rebuttal loop) — one agent instance per
+   role per team, six debater agents total.</span></li><li><span class="tag">3</span><span>A user can feed a question directly: <code>debate ask &quot;&lt;question text&gt;&quot;</code> runs one full
+   question-debate inside the active debate through the pipeline in Requirement 6.</span></li><li><span class="tag">4</span><span><code>debate auto --count N</code> runs N consecutive questions without a human supplying any of them: the
+   engine&#x27;s own Host agent generates each question from the debate&#x27;s topic, checked against every
+   question already asked in this debate so it never repeats one, before that question runs through
+   the same pipeline as Requirement 6.</span></li><li><span class="tag">5</span><span><code>.claude/skills/debate/SKILL.md</code> documents a second way to drive auto mode: the orchestrating omp
+   session itself composes the next question (using its own judgment, no extra agent call) and
+   passes it to <code>debate ask</code>, as an alternative to delegating question choice to the Host agent in
+   Requirement 4.</span></li><li><span class="tag">6</span><span>Per question, the engine runs these stages in this exact order:
+   - <strong>Huddle (private per team):</strong> each team&#x27;s Researcher agent produces an evidence brief for its
+     team&#x27;s stance (with <code>--tools=web_search</code> enabled); that brief is included as context in every
+     later prompt to that team&#x27;s Lead and Rebuttal agents for this question.
+   - <strong>Openings:</strong> FOR&#x27;s Lead speaks first, then AGAINST&#x27;s Lead — one turn each.
+   - <strong>Rebuttal loop:</strong> AGAINST&#x27;s Rebuttal agent speaks first, then FOR&#x27;s, alternating. The loop
+     stops at whichever of two configurable limits is reached first: a maximum number of rebuttal
+     turns (<code>--max-rebuttal-rounds</code>, default 2 rounds = 4 turns — reaching the 4th turn ends the
+     loop after it completes, the 3rd turn does not) or a wall-clock budget for the whole loop
+     (<code>--max-minutes</code>, default 10 — a turn already in flight when the clock expires is still allowed
+     to finish, no new turn starts after).
+   - <strong>Closings:</strong> AGAINST&#x27;s Lead speaks first, then FOR&#x27;s Lead — one turn each, so FOR holds both
+     the opening and the closing word.
+   - <strong>Verdict:</strong> if the judge is enabled (Requirement 7), one Judge turn; otherwise the question
+     ends after closings.</span></li><li><span class="tag">7</span><span>A Judge agent — not on either team, <code>--tools=web_search</code> enabled — is on by default. It reviews
+   the full question transcript and produces a verdict naming which side argued the question better,
+   or a declared draw, with a short rationale citing specific turns by stage and side. <code>--no-judge</code>
+   disables Requirement 6&#x27;s verdict stage entirely for that run.</span></li><li><span class="tag">8</span><span>Every agent turn (huddle, opening, rebuttal, closing, verdict, and the Host&#x27;s question
+   generation) is exactly one non-interactive <code>omp -p</code> subprocess call; no module in this engine
+   calls a model provider&#x27;s API directly. The model used for a run is whatever <code>--model</code> resolves
+   to, left unset by default so <code>omp</code>&#x27;s own configured default model answers — never a model name
+   hardcoded in this engine.</span></li><li><span class="tag">9</span><span>Every agent&#x27;s system prompt instructs it to answer in at most 120 words and to prefer a verified
+   web search over an unverified claim when the claim is central to its argument. Independently of
+   whether the model complies, the engine enforces a hard backstop: any turn&#x27;s stored and displayed
+   text is truncated to 200 words, and the turn is flagged <code>truncated: true</code> in storage when that
+   backstop fires — the flag reports the backstop, not the model&#x27;s own compliance with the 120-word
+   instruction.</span></li><li><span class="tag">10</span><span>Every debate, question, and turn (speaker side, role, stage, model used, full text, citations
+    extracted from URLs the turn&#x27;s own text contains, start/end timestamps, the <code>truncated</code> flag) is
+    persisted to a local SQLite database, so a debate survives the process exiting.</span></li><li><span class="tag">11</span><span><code>debate show &lt;debate-id&gt;</code> prints the full persisted transcript for that debate, question by
+    question, stages in the order they actually ran.</span></li><li><span class="tag">12</span><span><code>debate list</code> prints every persisted debate with its topic, question count, and creation time.</span></li></ul>
+<p>Walkthrough: <code>local://debate-engine-walkthrough.html</code> <span class="note">(a local path -- open it on the machine that ran this; it is not reachable from wherever this page is hosted)</span></p>
+<p><a href="https://github.com/adamcrevel/debate/issues/1" target="_blank" rel="noopener noreferrer">Feature issue</a></p>
+<div class="totals">
+<div class="total"><div class="n" data-since="2026-10-17T03:57:47Z">&mdash;</div><div class="l">total time</div></div>
+<div class="total"><div class="n">0</div><div class="l">total tokens</div></div>
+</div>
+<details><summary>Where that token figure comes from</summary><p class="note">null</p><p class="note">Most of a long conversation's token count is cache-read: the accumulated context is resent on every turn and billed at a fraction of the normal rate. A high total reflects the turn count over time, not necessarily a large bill.</p></details>
+<h2>Retrospective</h2><div class="prose"><h4>What happened</h4>
+<ul>
+<li><strong class="bullet-title">Cycle 0 (build):</strong><span class="bullet-body">T1–T6 built the whole engine (scaffolding/store, <code>omp_client</code>, <code>agents</code>, <code>engine</code>, <code>cli</code>+README, <code>SKILL.md</code>) with no reviewer or tester tasks in between — the plan went straight from six builders to <code>feature-validate-lead</code> with zero per-task review/mutation-proof gates in this cycle, unlike cycle 1. Every cycle-0 task also finished far faster than planned: T1 took ~2.5 real minutes against an <code>expected_minutes</code> of 25, T2 ~3.1 against 20, T3 ~3.1 against 20, T4 ~5.7 against 35, T5 ~4.8 against 25, T6 ~1.7 against 15 — actual wall time ran at roughly 10–25% of estimate on every single cycle-0 task, a one-directional estimation bias, not noise.</span></li>
+<li><strong class="bullet-title">Cycle 1 (trigger — <code>feature-validate-lead</code> FAIL):</strong><span class="bullet-body">5 of the 6 cycle-0 build tasks failed — only T6 (the SKILL.md doc task) passed clean. The findings were almost entirely test-coverage gaps caught by mutation testing — T1 (turn fields and <code>DebateSummary.created_at</code> never asserted by value), T2 (<code>test_builds_argv_without_model_or_tools</code> discarded its own return value), T4 (<code>max_rebuttal_rounds</code> only ever exercised at its default; no cross-call transcript-propagation assertion; no two-question-same-debate test), T5 (override test values indistinguishable from three different defaults at once; <code>debate show</code> fixture too thin to prove ordering) — plus one real production bug in T3: <code>build_host_system_prompt</code> never appended the Requirement 9 word-cap/verified-search instruction that the debater and judge prompt builders both carried, even though Requirement 9 explicitly names &quot;every agent&#x27;s system prompt&quot; including the Host&#x27;s question generation.</span></li>
+<li>Cycle 1 added 15 tasks to close those five findings: T7–T11 (the fixes, <code>expected_minutes</code> 12+10+12+18+18 = 70) plus a dedicated reviewer and mutation-proof task per fix, R7–R11 and TE7–TE11 (5 × 5 = 25 minutes expected each, 50 total). All 15 ran in parallel lanes per fix and the whole batch — fixes, then review/mutation-proof — completed in about 11 real minutes (08:35:00 → 08:46:00) against 120 minutes of summed <code>expected_minutes</code>, i.e., heavy parallelization recovered most of the estimation slack cycle 0 already showed.</li>
+<li><code>actual_tokens</code> is <code>null</code> for every single task in the table, cycle 0 and cycle 1 alike (T1–T11 all show <code>null</code> in that column even where <code>estimated_tokens</code> was filled in, e.g. T1&#x27;s 20900). <code>estimated_tokens</code> itself is also missing for T4, T5, and T6 in cycle 0 — the PM filled it for T1–T3 and every cycle-1 fix task but not for the three largest cycle-0 builders. Net effect: this plan cannot support any real token-cost analysis after the fact — every number in the &quot;did this cost what we thought&quot; question is either absent or itself an estimate.</li>
+<li>UAT (U1) ran once, in cycle 1, and passed against the real <code>omp</code> CLI (REQ-1 through REQ-12 all checked, 22 real turns across 2 questions persisted and round-tripped correctly via direct DB query). Cycle 0&#x27;s log records <code>UAT: not_run</code> — U1 was gated behind validate-lead&#x27;s cycle-0 FAIL and only executed once the fix cycle&#x27;s PASS cleared it, so the feature only ever ran UAT once, not once per cycle.</li>
+</ul>
+<h4>Proposals</h4>
+<ul>
+<li>Give cycle 0&#x27;s own build tasks (T1–T6, or whichever tasks a future plan&#x27;s first cycle contains) a reviewer + mutation-proof task immediately after each builder, the same shape cycle 1 used for T7–T11, instead of routing straight to <code>feature-validate-lead</code>. Four of the five cycle-1 findings were exactly the class of gap a per-task mutation-proof step is built to catch (assertions on discarded return values, parameters only ever exercised at their default, fixtures too thin to distinguish pass from fail); catching them at the task level would plausibly have avoided the second cycle entirely rather than deferring the same check to a later cross-cutting gate.</li>
+<li>For any requirement whose wording implies a property must hold identically across multiple sibling builder functions — here, Requirement 9&#x27;s &quot;every agent&#x27;s system prompt&quot; across <code>build_debater_system_prompt</code>, <code>build_judge_system_prompt</code>, and <code>build_host_system_prompt</code> — write one parametrized test that iterates over all three builders and asserts the shared instruction text in each, rather than three independent per-builder tests. T3&#x27;s bug was exactly a missing-in-one inconsistency across three sibling functions that per-function tests didn&#x27;t structurally compare.</li>
+<li>Require every task-table row to carry a real <code>actual_tokens</code> value before a task is marked <code>complete</code>, and require <code>estimated_tokens</code> on every builder task at plan time (T4/T5/T6 shipped without one). As written, this plan&#x27;s token column is unusable for judging real cost against estimate on any task, cycle 0 or cycle 1.</li>
+<li>Given that cycle-0 actual durations landed at roughly 10–25% of <code>expected_minutes</code> on all six tasks (not one outlier), recalibrate the estimator for this task shape (single-module builder task, Python, this repo) downward rather than treating each individual estimate as independent guesswork — the same bias recurred across every task in the cycle.</li>
+</ul>
+<p class="note">This report cost approximately 4600 tokens (self-reported estimate) / not available (measured) tokens. Not counted in the feature&#x27;s own total — this analysis happened after the feature was already done.</p></div>
+</section>
+<nav class="tabs">
+<button data-cycle-tab="0" aria-selected="false" onclick="showCycle(0)">Cycle 0</button>
+<button data-cycle-tab="1" aria-selected="true" onclick="showCycle(1)">Cycle 1</button>
+</nav>
+<section class="panel" data-cycle-panel="0" hidden>
+<h2>Cycle 0</h2>
+<p><strong>Trigger.</strong> initial</p>
+<p><span class="neutral"><span class="dot"></span>UAT not run.</span></p>
+<p class="note">6 task(s). Estimated 140 min. Actual tokens 0, estimated 45,500. This never includes the driving conversation's own tokens, which cannot honestly be split by cycle.
+<div class="scroll"><table><thead><tr><th></th><th>Id</th><th>Description</th><th>Duration (Estimate)</th><th>Started At (Estimate)</th></tr></thead><tbody><tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T1</span></td><td><span class="desc">Repo scaffolding: <code>pyproject.toml</code> (uv-managed, <code>ruff</code>+<code>pytest</code> configured, <code>debate</code> console-script entry point targeting <code>debate.cli:main</code>), <code>src/debate/config.py</code> (<code>DebateConfig</code> — topic, model, max_rebuttal_rounds, max_minutes, judge_enabled), <code>src/debate/store.py</code> (SQLite schema + CRUD for debates/questions/turns per Requirement 10, including the <code>truncated</code> flag and extracted citations)</span></td><td><span data-since="2026-10-17T07:55:55Z" data-until="2026-10-17T07:58:28Z">&mdash;</span> (25 min)</td><td><span data-at="2026-10-17T07:55:55Z">&mdash;</span> (<span data-at="2026-10-17T07:49:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens 20900 &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T2</span></td><td><span class="desc"><code>src/debate/omp_client.py</code>: async wrapper that builds and runs one <code>omp -p --mode text</code> subprocess call per Requirement 8 (system prompt, <code>--tools</code>, <code>--model</code>, timeout), and enforces the 200-word truncation backstop from Requirement 9, returning whether it fired</span></td><td><span data-since="2026-10-17T07:58:28Z" data-until="2026-10-17T08:01:39Z">&mdash;</span> (20 min)</td><td><span data-at="2026-10-17T07:58:28Z">&mdash;</span> (<span data-at="2026-10-17T08:14:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens 10900 &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T3</span></td><td><span class="desc"><code>src/debate/agents.py</code>: system-prompt templates for the six debater personas (Lead/Researcher/Rebuttal × FOR/AGAINST), the Judge persona (Requirement 7), and the Host persona (Requirement 4&#x27;s question-generation, including the instruction to check against already-asked questions)</span></td><td><span data-since="2026-10-17T07:58:28Z" data-until="2026-10-17T08:01:39Z">&mdash;</span> (20 min)</td><td><span data-at="2026-10-17T07:58:28Z">&mdash;</span> (<span data-at="2026-10-17T08:34:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens 13700 &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T4</span></td><td><span class="desc"><code>src/debate/engine.py</code>: the per-question pipeline in the exact stage order and budget rules of Requirement 6, persisting every turn via T1&#x27;s store and calling T2 with T3&#x27;s personas; <code>generate_next_question()</code> implementing Requirement 4&#x27;s Host-mode question generation against the debate&#x27;s own question history from the store</span></td><td><span data-since="2026-10-17T08:01:39Z" data-until="2026-10-17T08:07:19Z">&mdash;</span> (35 min)</td><td><span data-at="2026-10-17T08:01:39Z">&mdash;</span> (<span data-at="2026-10-17T08:54:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens null &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T5</span></td><td><span class="desc"><code>src/debate/cli.py</code>: <code>debate start/ask/auto/show/list</code> (Requirements 1, 3, 4, 11, 12) with <code>--model</code>, <code>--max-rebuttal-rounds</code>, <code>--max-minutes</code>, <code>--no-judge</code> flags; update <code>README.md</code> with install, usage for every command, the debate format, and an explicit note that Discord is future work</span></td><td><span data-since="2026-10-17T08:07:19Z" data-until="2026-10-17T08:12:06Z">&mdash;</span> (25 min)</td><td><span data-at="2026-10-17T08:07:19Z">&mdash;</span> (<span data-at="2026-10-17T09:29:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens null &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T6</span></td><td><span class="desc"><code>.claude/skills/debate/SKILL.md</code> documenting Requirement 5 (the orchestrating session acting as host) alongside the direct CLI commands from T5, written for an omp session reading it as a skill</span></td><td><span data-since="2026-10-17T08:12:06Z" data-until="2026-10-17T08:13:46Z">&mdash;</span> (15 min)</td><td><span data-at="2026-10-17T08:12:06Z">&mdash;</span> (<span data-at="2026-10-17T09:54:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens null &middot; Actual tokens null</td></tr></tbody></table></div>
+<h2>Assumptions</h2><ul class="items"><li><span class="tag">A1</span><span>No in-flight peer features exist in this repository (<code>feature-issues.py list</code></span></li><li><span class="tag">A2</span><span>Evidence grounding goes through <code>omp</code>&#x27;s own <code>web_search</code> tool, invoked by giving a</span></li><li><span class="tag">A3</span><span>The debate&#x27;s default model is left unset end-to-end (every <code>omp</code> call omits</span></li><li><span class="tag">A4</span><span>No CI workflow is added in this feature — a brand-new personal repo with no stated CI</span></li><li><span class="tag">A5</span><span><code>omp_client.py</code>&#x27;s tests mock the subprocess call (no automated test shells out to a</span></li><li><span class="tag">A6</span><span>T1 — <code>hatchling</code> as the uv build backend; <code>DEFAULT_DB_PATH = ~/.debate/debate.db</code>;</span></li><li><span class="tag">A7</span><span>T2 — system + user prompt combined into one string passed to <code>omp -p</code> (it takes a</span></li><li><span class="tag">A8</span><span>T4 — the rebuttal loop&#x27;s wall-clock deadline is computed once when the loop starts</span></li><li><span class="tag">A9</span><span>T5 — &quot;active debate&quot; (used by <code>ask</code>/<code>auto</code> when <code>--debate-id</code> is omitted) resolves to</span></li></ul>
+</section>
+<section class="panel" data-cycle-panel="1">
+<h2>Cycle 1</h2>
+<p><strong>Trigger.</strong> feature-validate-lead FAIL — must_fix items spanning T1, T2, T3, T4, T5 (T6 passed clean)</p>
+<p><strong>Findings.</strong></p><ul><li>T1 (tests/test_store.py): turn fields (role/text/model_used/started_at/ended_at) never asserted</li><li>T2 (tests/test_omp_client.py::test_builds_argv_without_model_or_tools): return value discarded,</li><li>T3 (src/debate/agents.py build_host_system_prompt): missing the Requirement 9 word-limit/</li><li>T4 (src/debate/engine.py / tests/test_engine.py): max_rebuttal_rounds only ever exercised at its</li><li>T5 (src/debate/cli.py / tests/test_cli.py): override test values for max-rebuttal-rounds/</li></ul>
+<p><span class="good"><span class="dot"></span>UAT passed.</span></p>
+<ul><li>REQ-1: <code>debate start --topic &quot;...&quot;</code> created a debate; <code>debate start --topic &quot;   &quot;</code> (whitespace-only) rejected with a clear error, exit code 1.</li><li>REQ-2: transcript shows exactly 3 distinct roles (Researcher, Lead, Rebuttal) per side, six debater agents total.</li><li>REQ-3: <code>debate ask &quot;...&quot; --debate-id 1</code> ran the full pipeline to completion (~85s wall-clock, 11 real omp subprocess calls).</li><li>REQ-4: <code>debate auto --count 1</code> had the Host agent generate a real, on-topic, non-duplicate question, then ran it through the same pipeline.</li><li>REQ-5: SKILL.md&#x27;s &quot;Delegated&quot; vs &quot;Self-composed&quot; sections documented and cross-checked against live <code>--help</code> output and the runs actually executed.</li><li>REQ-6: stage order confirmed exactly: huddle(2) -&gt; opening(2, FOR then AGAINST) -&gt; rebuttal(4, AGAINST-first alternating) -&gt; closing(2, AGAINST then FOR) -&gt; verdict(1); later turns visibly rebut specific claims from earlier turns.</li><li>REQ-7: Judge verdict named a winner with a rationale citing specific sources/turns by stage and side; web-search-grounded evidence (QJE, NY Fed, Microsoft) appeared in huddle briefs and the verdict.</li><li>REQ-8: DB query confirmed <code>model_used</code> is <code>None</code> on every turn (no <code>--model</code> passed), proving the engine never hardcodes a model.</li><li>REQ-9: DB query confirmed <code>truncated=0</code> on all sampled real turns, correctly reporting backstop status; word-cap/truncation unit coverage cited from validate-lead&#x27;s cycle-1 PASS.</li><li>REQ-10: direct DB query confirmed every turn field (role/side/stage/model_used/text/citations/timestamps) round-trips correctly; 22 turns across 2 questions persisted and survived process exit.</li><li>REQ-11: <code>debate show 1</code> printed both questions&#x27; full transcripts in ask order, each in exact pipeline stage order.</li><li>REQ-12: <code>debate list</code> printed correct topic, question count (updated 1 -&gt; 2), and creation timestamp.</li><li>Standing checks cited (not re-run): validate-lead&#x27;s cycle-1 PASS — 103 tests passed, ruff clean, subprocess/asyncio.create_subprocess_exec confined to omp_client.py, every cycle-0 must_fix item mutation-proven closed, no regressions.</li></ul>
+<p class="note">16 task(s). Estimated 140 min. Actual tokens 0, estimated 70,000. This never includes the driving conversation's own tokens, which cannot honestly be split by cycle.
+<div class="scroll"><table><thead><tr><th></th><th>Id</th><th>Description</th><th>Duration (Estimate)</th><th>Started At (Estimate)</th></tr></thead><tbody><tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T7</span></td><td><span class="desc">Fix T1 test-coverage gaps (<code>tests/test_store.py</code>): (1) <code>test_create_turn_auto_extracts_citations</code> never asserts <code>turn.role</code>, <code>turn.text</code>, <code>turn.model_used</code>, <code>turn.started_at</code>, <code>turn.ended_at</code> round-trip through <code>Store.create_turn</code>/<code>list_turns</code> against the literals passed in (Requirement 10) — add those assertions. (2) <code>DebateSummary.created_at</code> (rendered by <code>debate list</code>, Requirement 12) is never asserted by value anywhere, only a truthiness check on the unrelated singular <code>Debate.created_at</code> — assert each summary&#x27;s <code>created_at</code> by value in <code>test_list_debates_ordering_and_counts</code>.</span></td><td><span data-since="2026-10-17T08:35:00Z" data-until="2026-10-17T08:39:34Z">&mdash;</span> (12 min)</td><td><span data-at="2026-10-17T08:35:00Z">&mdash;</span> (<span data-at="2026-10-17T08:30:56Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens 12000 &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T8</span></td><td><span class="desc">Fix T2 test-coverage gap (<code>tests/test_omp_client.py::test_builds_argv_without_model_or_tools</code>): the call&#x27;s return value is discarded, so nothing asserts <code>result.model_used is None</code> on the default (no <code>--model</code>) path (Requirement 8&#x27;s &quot;never a model name hardcoded&quot; / Requirement 10&#x27;s model-used persistence) — capture the result and add that assertion.</span></td><td><span data-since="2026-10-17T08:35:00Z" data-until="2026-10-17T08:39:34Z">&mdash;</span> (10 min)</td><td><span data-at="2026-10-17T08:35:00Z">&mdash;</span> (<span data-at="2026-10-17T08:42:56Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens 10000 &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T9</span></td><td><span class="desc">Fix T3 production bug and test gap (<code>src/debate/agents.py</code>, <code>tests/test_agents.py</code>): (1) <code>build_host_system_prompt</code> never appends the 120-word-cap / prefer-verified-search instruction that <code>build_debater_system_prompt</code> and <code>build_judge_system_prompt</code> both carry, though Requirement 9 names &quot;every agent&#x27;s system prompt&quot; including the Host&#x27;s question generation — append the same instruction text used by the other two builders. (2) No Judge test asserts the 120-word-cap / verified-search sentences appear in the Judge&#x27;s prompt, unlike the debater prompts&#x27; dedicated parametrized tests — add a matching assertion for <code>build_judge_system_prompt</code>.</span></td><td><span data-since="2026-10-17T08:35:00Z" data-until="2026-10-17T08:39:34Z">&mdash;</span> (12 min)</td><td><span data-at="2026-10-17T08:35:00Z">&mdash;</span> (<span data-at="2026-10-17T08:52:56Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens 12000 &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T10</span></td><td><span class="desc">Fix T4 test-coverage gaps (<code>src/debate/engine.py</code>, <code>tests/test_engine.py</code>): (1) <code>config.max_rebuttal_rounds</code> is only ever exercised at its default (2) in every binding test, so <code>max_rebuttal_turns = config.max_rebuttal_rounds * 2</code> could be hardcoded to <code>4</code> undetected — add a round-limit test parameterized both directions (rounds=1 -&gt; 2 turns, rounds=3 -&gt; 6 turns) with an instant mock and a large <code>max_minutes</code> so only the round limit binds. (2) No test asserts prior turns&#x27; text actually reaches later prompts via <code>_render_transcript</code> — passing <code>&quot;&quot;</code> at the rebuttal, closing, and AGAINST-opening call sites would leave the suite green — extend the sentinel-based test to assert each later prompt contains every prior debated turn&#x27;s sentinel text it should see. (3) <code>question_index = len(store.list_questions(debate_id))</code> is never observed at a value other than 0 since no test runs <code>run_question</code> twice against the same debate — add a two-question-same-debate test asserting indices 0 and 1. Before adding new tests, re-run the suite and check whether the tester&#x27;s own concurrent edits during review already closed any of these three (worktree saw concurrent edits from multiple review agents on this file).</span></td><td><span data-since="2026-10-17T08:35:00Z" data-until="2026-10-17T08:39:34Z">&mdash;</span> (18 min)</td><td><span data-at="2026-10-17T08:35:00Z">&mdash;</span> (<span data-at="2026-10-17T09:04:56Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens 18000 &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">T11</span></td><td><span class="desc">Fix T5 test-coverage gaps (<code>src/debate/cli.py</code>, <code>tests/test_cli.py</code>): (1) the one assertion touching <code>--max-rebuttal-rounds</code>/<code>--max-minutes</code> overrides uses values indistinguishable from the stored-fallback, the config dataclass default, and the CLI parser&#x27;s own default at once — test an override with values differing from all three (e.g. 5 / 0.5), and separately re-pin the fallback path with stored values that also differ from all defaults. (2) <code>debate show</code>&#x27;s test only ever persists one question, so truncating to <code>questions[:1]</code> would leave the suite green — persist two questions with distinct text and assert both appear in order. (3) The show test&#x27;s stage-order assertion (<code>huddle &lt; opening &lt; verdict</code>) is also satisfied by plain alphabetical sort, since the fixture omits &#x27;closing&#x27; and &#x27;rebuttal&#x27; (whose alphabetical position differs from run order) — include all five stages in the fixture so alphabetical-vs-run-order can&#x27;t coincide. Before adding new tests, re-run the suite and check whether the tester&#x27;s own concurrent edits during review already closed any of these three.</span></td><td><span data-since="2026-10-17T08:35:00Z" data-until="2026-10-17T08:39:34Z">&mdash;</span> (18 min)</td><td><span data-at="2026-10-17T08:35:00Z">&mdash;</span> (<span data-at="2026-10-17T09:22:56Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">builder &middot; Est tokens 18000 &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">R7</span></td><td><span class="desc">Independent review of T7&#x27;s fix (tests/test_store.py)</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">reviewer &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">TE7</span></td><td><span class="desc">Independent mutation-proof of T7&#x27;s fix</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">tester &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">R8</span></td><td><span class="desc">Independent review of T8&#x27;s fix (tests/test_omp_client.py)</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">reviewer &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">TE8</span></td><td><span class="desc">Independent mutation-proof of T8&#x27;s fix</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">tester &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">R9</span></td><td><span class="desc">Independent review of T9&#x27;s production fix + tests (src/debate/agents.py)</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">reviewer &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">TE9</span></td><td><span class="desc">Independent mutation-proof of T9&#x27;s fix</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">tester &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">R10</span></td><td><span class="desc">Independent review of T10&#x27;s fix (src/debate/engine.py, tests/test_engine.py)</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">reviewer &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">TE10</span></td><td><span class="desc">Independent mutation-proof of T10&#x27;s fix</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">tester &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">R11</span></td><td><span class="desc">Independent review of T11&#x27;s fix (src/debate/cli.py, tests/test_cli.py)</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">reviewer &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">TE11</span></td><td><span class="desc">Independent mutation-proof of T11&#x27;s fix</span></td><td><span data-since="2026-10-17T08:39:34Z" data-until="2026-10-17T08:46:00Z">&mdash;</span> (5 min)</td><td><span data-at="2026-10-17T08:39:34Z">&mdash;</span> (<span data-at="2026-10-17T08:39:34Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">tester &middot; Est tokens — &middot; Actual tokens null</td></tr>
+<tr><td><span class="good"><span class="dot"></span>Complete.</span></td><td><span class="tag">U1</span></td><td><span class="desc">Run the whole debate-engine feature end to end as a real user would: <code>debate start</code>, <code>debate ask</code>, <code>debate auto</code>, <code>debate show</code>, <code>debate list</code>, exercising the full pipeline (huddle/openings/rebuttal loop/closings/judge) against the real <code>omp</code> CLI, not mocks</span></td><td><span data-since="2026-10-17T08:45:14Z" data-until="2026-10-17T08:51:27Z">&mdash;</span> (20 min)</td><td><span data-at="2026-10-17T08:45:14Z">&mdash;</span> (<span data-at="2026-10-17T08:45:14Z">&mdash;</span>)</td></tr>
+<tr class="sub"><td colspan="5">uat &middot; Est tokens — &middot; Actual tokens null</td></tr></tbody></table></div>
+</section>
+</main><script>
+// REFRESH_MS and LOADED_AT drive the scheduled reload, the on-page countdown, and
+// the auto-refresh toggle below, so none of them can ever disagree with each other.
+var REFRESH_MS=300000, LOADED_AT=Date.now();
+var AUTOREFRESH_KEY='feature-dashboard-autorefresh';
+var reloadTimer=null;
+
+function armReload(){
+  if(reloadTimer) clearTimeout(reloadTimer);
+  reloadTimer=setTimeout(function(){location.reload();}, REFRESH_MS-(Date.now()-LOADED_AT));
+}
+function disarmReload(){
+  if(reloadTimer){clearTimeout(reloadTimer);reloadTimer=null;}
+}
+function storedAutorefreshPref(){
+  try{return localStorage.getItem(AUTOREFRESH_KEY);}catch(e){return null;}
+}
+function setAutorefreshUI(button,on){
+  button.textContent='Auto refresh '+(on?'on':'off');
+  button.setAttribute('aria-pressed',String(on));
+  document.querySelectorAll('[data-refresh-in]').forEach(function(el){el.hidden=!on;});
+  document.querySelectorAll('[data-refresh-off-note]').forEach(function(el){el.hidden=on;});
+}
+
+// Durations count up client-side, so an in-progress row does not freeze between
+// publishes, and every timestamp reads in the viewer's own zone rather than one
+// chosen when the page was written.
+function fmt(ms){var s=Math.max(0,Math.round(ms/1000)),h=Math.floor(s/3600),
+m=Math.floor(s%3600/60);return h?h+'h '+m+'m':m+'m';}
+function fmtCountdown(ms){var s=Math.max(0,Math.round(ms/1000)),
+m=Math.floor(s/60);return m+'m '+(s%60)+'s';}
+var MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtAt(d){
+  var h=d.getHours(),m=d.getMinutes(),ap=h>=12?'pm':'am';
+  h=h%12;if(h===0)h=12;
+  var mm=m<10?'0'+m:m;
+  return MONTHS[d.getMonth()]+' '+d.getDate()+', '+h+':'+mm+ap;
+}
+function tick(){
+  var now=Date.now();
+  document.querySelectorAll('[data-since]').forEach(function(el){
+    var until=el.dataset.until?Date.parse(el.dataset.until):now;
+    el.textContent=fmt(until-Date.parse(el.dataset.since));});
+  document.querySelectorAll('[data-at]').forEach(function(el){
+    el.textContent=fmtAt(new Date(el.dataset.at));});
+  document.querySelectorAll('[data-refresh-in]').forEach(function(el){
+    el.textContent=fmtCountdown(REFRESH_MS-(now-LOADED_AT));});
+}
+tick(); setInterval(tick,1000);
+
+// Auto-refresh defaults off once the feature is done (data-feature-done, set by the
+// page itself) and on otherwise, unless this browser already recorded its own choice.
+(function(){
+  var button=document.getElementById('autorefresh');
+  if(!button) return;
+  var stored=storedAutorefreshPref();
+  var defaultOn=!document.querySelector('[data-feature-done]');
+  var isOn=stored===null?defaultOn:stored==='on';
+  setAutorefreshUI(button,isOn);
+  if(isOn) armReload();
+  button.addEventListener('click',function(){
+    var on=button.getAttribute('aria-pressed')!=='true';
+    try{localStorage.setItem(AUTOREFRESH_KEY,on?'on':'off');}catch(e){}
+    setAutorefreshUI(button,on);
+    if(on){LOADED_AT=Date.now();armReload();}else{disarmReload();}
+  });
+  var refreshNow=document.getElementById('refresh-now');
+  if(refreshNow) refreshNow.addEventListener('click',function(){location.reload();});
+})();
+
+// A description gets an expand control only when it truly does not fit.
+document.querySelectorAll('.desc').forEach(function(el){
+  if(el.scrollWidth<=el.clientWidth) return;
+  var b=document.createElement('button');b.className='more';b.textContent='more';
+  b.onclick=function(){el.classList.toggle('open');
+    b.textContent=el.classList.contains('open')?'less':'more';};
+  el.parentNode.appendChild(b);});
+
+function showCycle(n){
+  document.querySelectorAll('[data-cycle-panel]').forEach(function(p){
+    p.hidden=(p.dataset.cyclePanel!==String(n));});
+  document.querySelectorAll('[data-cycle-tab]').forEach(function(t){
+    t.setAttribute('aria-selected',t.dataset.cycleTab===String(n));});
+}
+</script>

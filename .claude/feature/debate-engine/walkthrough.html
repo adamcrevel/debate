@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR Walkthrough: debate-engine</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #3fb950;
+    --code-bg: #1f2630;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 5rem;
+  }
+  header.hero {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  header.hero .kicker {
+    color: var(--accent2);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  header.hero h1 {
+    margin: 0.3rem 0 0.4rem;
+    font-size: 2rem;
+  }
+  header.hero .sub {
+    color: var(--muted);
+    font-size: 1.05rem;
+  }
+  .badges { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .badge.status { color: var(--accent2); border-color: #2ea04366; background: #2ea0431a; }
+  nav.toc {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 2rem;
+  }
+  nav.toc h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 0.6rem;
+  }
+  nav.toc ol { margin: 0; padding-left: 1.3rem; }
+  nav.toc li { margin-bottom: 0.3rem; }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  .overview {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 2rem;
+  }
+  section.module {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 1.25rem;
+    overflow: hidden;
+  }
+  section.module > .head {
+    background: var(--panel);
+    padding: 0.9rem 1.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: default;
+  }
+  section.module > .head .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 50%;
+    background: #1f6feb33;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.9rem;
+    flex: none;
+  }
+  section.module > .head h2 { margin: 0; font-size: 1.15rem; }
+  section.module > .head code {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-weight: 400;
+  }
+  section.module > .body {
+    padding: 1.1rem 1.4rem 1.3rem;
+  }
+  code, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--code-bg);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: #e6edf3;
+  }
+  p { margin: 0.6rem 0; }
+  ol, ul { padding-left: 1.4rem; }
+  li { margin-bottom: 0.35rem; }
+  strong { color: #e6edf3; }
+  .footnote {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .diff-note {
+    margin-top: 0.75rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">PR Walkthrough</div>
+  <h1>debate-engine</h1>
+  <div class="sub">A structured, evidence-grounded multi-agent debate CLI, driven entirely through <code>omp</code>.</div>
+  <div class="badges">
+    <span class="badge status">Status: done</span>
+    <span class="badge">12 requirements</span>
+    <span class="badge">6 modules</span>
+    <span class="badge">Discord: future work</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#persistence">Persistence and config</a> — <code>config.py</code>, <code>store.py</code></li>
+    <li><a href="#client">The omp subprocess client</a> — <code>omp_client.py</code></li>
+    <li><a href="#personas">Agent personas</a> — <code>agents.py</code></li>
+    <li><a href="#engine">The pipeline engine</a> — <code>engine.py</code></li>
+    <li><a href="#cli">The CLI</a> — <code>cli.py</code></li>
+    <li><a href="#skill">The omp skill</a> — <code>SKILL.md</code></li>
+  </ol>
+</nav>
+
+<section class="overview" id="overview">
+  <p><code>debate</code> is a Python CLI that runs structured, evidence-grounded debates between two AI teams.
+  Give it a topic, and it builds a <strong>FOR</strong> team and an <strong>AGAINST</strong> team — three agents
+  each (Lead, Researcher, Rebuttal) — then runs questions through a fixed pipeline: private research huddle,
+  openings, a budgeted rebuttal loop, closings, and an optional judge verdict. Questions can be supplied by a
+  human one at a time (<code>debate ask</code>) or generated by the engine itself in a batch
+  (<code>debate auto --count N</code>).</p>
+
+  <p><strong>Why it exists:</strong> to turn "ask one model a question" into a repeatable, adversarial,
+  evidence-checked format — two sides forced to back claims with live web search, with every turn persisted
+  so the result survives the process exiting and can be replayed later (<code>debate show</code>).</p>
+
+  <p><strong>Why it's provider-agnostic by construction:</strong> every single agent turn — huddle, opening,
+  rebuttal, closing, verdict, even the Host's question generation — is exactly one non-interactive subprocess
+  call to the <code>omp</code> CLI. Nothing in this engine talks to a model provider's API directly, and nothing
+  hardcodes a model name; <code>--model</code> is left unset by default so whatever <code>omp</code> is configured
+  to use answers. <code>omp</code>'s own <code>web_search</code> tool is how agents ground claims in real evidence,
+  rather than this engine managing its own search API key.</p>
+
+  <p><strong>What's deliberately not here:</strong> a Discord bot front-end. That's an explicit, named follow-up
+  — this feature ships only the CLI and an <code>omp</code> skill that wraps it for LLM-driven callers.</p>
+
+  <p style="color: var(--muted); font-size: 0.9rem;">The six sections below follow the dependency order the
+  engine was actually built in: storage and config first, then the one place that's allowed to shell out, then
+  the personas that script each agent, then the pipeline that sequences them, then the CLI surface, then the
+  skill that lets an <code>omp</code> session drive it all.</p>
+</section>
+
+<section class="module" id="persistence">
+  <div class="head"><span class="num">1</span><h2>Persistence and config</h2><code>config.py · store.py</code></div>
+  <div class="body">
+    <p><code>DebateConfig</code> is a small dataclass holding the five knobs a debate run needs: topic, model,
+    <code>max_rebuttal_rounds</code> (default 2), <code>max_minutes</code> (default 10), <code>judge_enabled</code>
+    (default on). <code>__post_init__</code> rejects an empty or whitespace-only topic immediately — the first
+    line of defense against a silently-accepted blank topic.</p>
+    <p><code>Store</code> is the SQLite layer and the only place <code>debate</code>/<code>question</code>/<code>turn</code>
+    rows get written or read. It persists everything a turn carries: speaker side, role, stage, model used, full
+    text, citations auto-extracted from URLs the turn's own text contains, start/end timestamps, and the
+    <code>truncated</code> flag — so a debate survives the process exiting and <code>debate show</code>/
+    <code>debate list</code> have something durable to read back. Default DB path is
+    <code>~/.debate/debate.db</code>, overridable globally via <code>--db-path</code>.</p>
+    <div class="diff-note">Diff detail on request.</div>
+  </div>
+</section>
+
+<section class="module" id="client">
+  <div class="head"><span class="num">2</span><h2>The omp subprocess client</h2><code>omp_client.py</code></div>
+  <div class="body">
+    <p>This is the layering boundary the whole feature is built around: <strong>the only module in
+    <code>src/debate</code> allowed to import <code>subprocess</code> or use
+    <code>asyncio.create_subprocess_exec</code>.</strong> A grep/AST scan across every other <code>.py</code> file
+    under <code>src/debate/</code> enforces that nothing else shells out to <code>omp</code> on its own — the thing
+    that would quietly defeat the provider-agnostic guarantee.</p>
+    <p><code>run_omp_turn</code> builds and awaits exactly one <code>omp -p --mode text</code> call per agent turn.
+    Since <code>omp -p</code> takes a single prompt argument rather than separate system/user flags, the client
+    combines them into one string with labelled <code>[System instructions]</code> / <code>[Task]</code> blocks —
+    legible in captured transcripts without inventing chat-style markup <code>omp -p</code> doesn't understand.</p>
+    <p>It also owns the hard backstop: independent of whether the model honors its own 120-word instruction,
+    every returned turn is counted and truncated to 200 words if it runs over, with <code>truncated: True</code>
+    flagged on the result. This is a blind backstop — it only ever fires at the 200-word line, regardless of the
+    model's own compliance.</p>
+    <div class="diff-note">Diff detail on request.</div>
+  </div>
+</section>
+
+<section class="module" id="personas">
+  <div class="head"><span class="num">3</span><h2>Agent personas</h2><code>agents.py</code></div>
+  <div class="body">
+    <p>Pure prompt-building, no process spawning. One function builds all six debater personas —
+    <code>build_debater_system_prompt(side, role, topic)</code> for every (FOR/AGAINST) ×
+    (Lead/Researcher/Rebuttal) combination — plus <code>build_judge_system_prompt(topic)</code> for the
+    out-of-team Judge and <code>build_host_system_prompt(topic, already_asked)</code> for the question-generating
+    Host used by <code>debate auto</code>.</p>
+    <p>Every persona's prompt carries the same two shared instructions: a 120-word answer cap, and a preference
+    for a verified web search over an unverified claim when the claim is central to the argument. The Host
+    persona additionally receives the full list of questions already asked in the debate, so it can avoid ever
+    repeating one.</p>
+    <div class="diff-note">Diff detail on request.</div>
+  </div>
+</section>
+
+<section class="module" id="engine">
+  <div class="head"><span class="num">4</span><h2>The pipeline engine</h2><code>engine.py</code></div>
+  <div class="body">
+    <p>This is where the question-pipeline stage order is encoded exactly:</p>
+    <ol>
+      <li><strong>Huddle (private, per team)</strong> — each team's Researcher produces an evidence brief with
+      <code>--tools=web_search</code> enabled; the brief is folded into every later prompt to that team's Lead and
+      Rebuttal for this question.</li>
+      <li><strong>Openings</strong> — FOR's Lead, then AGAINST's Lead.</li>
+      <li><strong>Rebuttal loop</strong> — AGAINST's Rebuttal speaks first, then FOR's, alternating, bounded by
+      whichever of two limits is hit first: <code>max_rebuttal_rounds * 2</code> turns, or a
+      <code>max_minutes</code> wall-clock deadline computed once when the loop starts and checked only before a
+      <em>new</em> turn begins — a turn already in flight is always allowed to finish.</li>
+      <li><strong>Closings</strong> — AGAINST's Lead, then FOR's Lead, so FOR holds both the opening and the
+      closing word.</li>
+      <li><strong>Verdict</strong> — one Judge turn (web-search enabled) if the judge is enabled, naming a winner
+      or declared draw with a rationale citing specific turns by stage and side; skipped entirely if
+      <code>--no-judge</code>.</li>
+    </ol>
+    <p>Every stage's prior turns reach later prompts via a transcript renderer, so a rebuttal is actually
+    responding to what was said earlier, not just to the topic in isolation. The same module's
+    <code>generate_next_question()</code> implements the Host-mode path for <code>debate auto</code>, reading the
+    debate's own question history back from the store so the Host agent never repeats a question.</p>
+    <div class="diff-note">Diff detail on request.</div>
+  </div>
+</section>
+
+<section class="module" id="cli">
+  <div class="head"><span class="num">5</span><h2>The CLI</h2><code>cli.py</code></div>
+  <div class="body">
+    <p>Five subcommands, thin wrappers over config/store/engine:</p>
+    <ul>
+      <li><code>debate start --topic "&lt;text&gt;"</code> — creates a debate (rejecting a blank/whitespace
+      topic), storing <code>--model</code> / <code>--max-rebuttal-rounds</code> / <code>--max-minutes</code> /
+      <code>--no-judge</code> as that debate's defaults; prints the new debate id.</li>
+      <li><code>debate ask "&lt;question&gt;"</code> — runs one question through the full pipeline on the target
+      debate. Flags here override the debate's stored defaults for that single call only, never mutating the
+      stored row.</li>
+      <li><code>debate auto --count N</code> — runs N consecutive Host-generated questions with no human
+      supplying any of them, printing each question and result as it completes.</li>
+      <li><code>debate show &lt;debate-id&gt;</code> — prints the full transcript, question by question, in the
+      exact order stages actually ran.</li>
+      <li><code>debate list</code> — prints every persisted debate with topic, question count, and creation
+      time.</li>
+    </ul>
+    <p>All five accept a global <code>--db-path</code> for pointing at a non-default SQLite file. "Active debate"
+    (used when <code>--debate-id</code> is omitted on <code>ask</code>/<code>auto</code>) resolves to the most
+    recently created debate — documented as safe only immediately after a <code>start</code> in the same
+    session.</p>
+    <div class="diff-note">Diff detail on request.</div>
+  </div>
+</section>
+
+<section class="module" id="skill">
+  <div class="head"><span class="num">6</span><h2>The omp skill</h2><code>.claude/skills/debate/SKILL.md</code></div>
+  <div class="body">
+    <p>Documents the CLI for an <code>omp</code> session to drive directly, plus a second way to run multiple
+    questions that the CLI alone doesn't give you: instead of delegating question choice to the engine's Host
+    agent via <code>debate auto</code>, the orchestrating session can compose each next question itself — using
+    its own judgment and <code>debate show</code>'s transcript — and pass it straight to <code>debate ask</code>,
+    skipping the Host agent's extra <code>omp</code> call entirely. The skill is explicit that
+    <code>--debate-id</code> should always be passed rather than relying on the "most recent debate" fallback, and
+    restates the Discord-is-future-work boundary.</p>
+    <div class="diff-note">Diff detail on request.</div>
+  </div>
+</section>
+
+<div class="footnote">
+  Generated from <code>.claude/feature/debate-engine/plan.md</code> (Status: done, 12 requirements, cycle 1/3).
+  Source: <code>.worktrees/debate-engine/src/debate/</code>.
+</div>
+
+</div>
+</body>
+</html>

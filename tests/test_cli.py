@@ -374,3 +374,148 @@ def test_show_marks_only_the_truncated_turn(monkeypatch, capsys, db_path):
     marked = [line for line in capsys.readouterr().out.splitlines() if "[truncated]" in line]
     assert len(marked) == 1
     assert "AGAINST" in marked[0]
+
+
+def test_export_prints_rendered_markdown_without_publish(monkeypatch, capsys, db_path):
+    """`export` with no --publish prints the rendered Markdown to stdout and
+    never calls publish_gist."""
+    import debate.cli as cli_module
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("publish_gist must not be called without --publish")
+
+    monkeypatch.setattr(cli_module, "publish_gist", fail_if_called)
+
+    with Store(db_path) as store:
+        debate_id = store.create_debate(topic="Cats vs dogs")
+        question_id = store.create_question(debate_id, "Who wins?", 0)
+        store.create_turn(
+            question_id=question_id,
+            role="Lead",
+            stage="opening",
+            text="Cats are better.",
+            started_at="t0",
+            ended_at="t1",
+            truncated=False,
+            side="FOR",
+        )
+        store.create_turn(
+            question_id=question_id,
+            role="judge",
+            stage="verdict",
+            text="FOR wins\n\nStrong case.",
+            started_at="t0",
+            ended_at="t1",
+            truncated=False,
+        )
+
+    _run_cli(monkeypatch, ["--db-path", db_path, "export", str(debate_id)])
+
+    out = capsys.readouterr().out
+    assert "# 🏟️ Debate: Cats vs dogs" in out
+    assert "🏆 FOR wins" in out
+    assert "#### 🎤 Opening — FOR Lead" in out
+
+
+def test_export_publish_passes_markdown_filename_and_public_flag(monkeypatch, capsys, db_path):
+    """`export --publish --public` calls publish_gist with the rendered
+    Markdown, a filename naming the debate id, and public=True, then prints
+    only the returned URL -- not the Markdown itself."""
+    import debate.cli as cli_module
+
+    calls = []
+
+    def fake_publish_gist(markdown, *, filename, public):
+        calls.append((markdown, filename, public))
+        return "https://gist.github.com/adamcrevel/fake123"
+
+    monkeypatch.setattr(cli_module, "publish_gist", fake_publish_gist)
+
+    with Store(db_path) as store:
+        debate_id = store.create_debate(topic="Topic")
+        question_id = store.create_question(debate_id, "Q?", 0)
+        store.create_turn(
+            question_id=question_id,
+            role="Lead",
+            stage="opening",
+            text="Text.",
+            started_at="t0",
+            ended_at="t1",
+            truncated=False,
+            side="FOR",
+        )
+
+    _run_cli(
+        monkeypatch, ["--db-path", db_path, "export", str(debate_id), "--publish", "--public"]
+    )
+
+    out = capsys.readouterr().out.strip()
+    assert out == "https://gist.github.com/adamcrevel/fake123"
+    assert len(calls) == 1
+    markdown, filename, public = calls[0]
+    assert f"debate-{debate_id}-transcript.md" == filename
+    assert public is True
+    assert "# 🏟️ Debate: Topic" in markdown
+
+
+def test_export_publish_without_public_defaults_to_secret(monkeypatch, capsys, db_path):
+    """`export --publish` alone (no --public) calls publish_gist with public=False."""
+    import debate.cli as cli_module
+
+    calls = []
+    monkeypatch.setattr(
+        cli_module,
+        "publish_gist",
+        lambda markdown, *, filename, public: calls.append(public) or "https://gist/x",
+    )
+
+    with Store(db_path) as store:
+        debate_id = store.create_debate(topic="Topic")
+
+    _run_cli(monkeypatch, ["--db-path", db_path, "export", str(debate_id), "--publish"])
+
+    assert calls == [False]
+
+
+def test_export_public_without_publish_is_a_usage_error(monkeypatch, capsys, db_path):
+    """`export --public` without `--publish` exits non-zero with a clear message."""
+    with Store(db_path) as store:
+        debate_id = store.create_debate(topic="Topic")
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run_cli(monkeypatch, ["--db-path", db_path, "export", str(debate_id), "--public"])
+    assert exc_info.value.code != 0
+
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    assert "--publish" in captured.err
+
+
+def test_export_publish_error_surfaces_clean_message(monkeypatch, capsys, db_path):
+    """A GistPublishError from publish_gist surfaces as a clean error, not a traceback."""
+    import debate.cli as cli_module
+    from debate.gist_publish import GistPublishError
+
+    def fake_publish_gist(markdown, *, filename, public):
+        raise GistPublishError("gh is not authenticated")
+
+    monkeypatch.setattr(cli_module, "publish_gist", fake_publish_gist)
+
+    with Store(db_path) as store:
+        debate_id = store.create_debate(topic="Topic")
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run_cli(monkeypatch, ["--db-path", db_path, "export", str(debate_id), "--publish"])
+    assert exc_info.value.code != 0
+
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    assert "gh is not authenticated" in captured.err
+
+
+def test_export_unknown_debate_id_exits_cleanly(monkeypatch, capsys, db_path):
+    """`export` for a nonexistent debate id exits cleanly, same as `show` does."""
+    with pytest.raises(SystemExit) as exc_info:
+        _run_cli(monkeypatch, ["--db-path", db_path, "export", "999"])
+    assert exc_info.value.code != 0
+    assert "no debate with id 999" in capsys.readouterr().err

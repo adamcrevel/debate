@@ -80,6 +80,12 @@ def build_judge_system_prompt(topic: str) -> str:
     a declared draw, with a short rationale citing specific turns by stage
     (e.g. opening, rebuttal, closing) and side (Requirement 7).
 
+    The response's first line is required to be exactly one of five fixed
+    strings (``"FOR wins"``, ``"FOR wins narrowly"``, ``"AGAINST wins"``,
+    ``"AGAINST wins narrowly"``, or ``"Draw"``), so a caller can parse the
+    winner deterministically instead of re-interpreting free prose (see
+    `debate.render`, which depends on this exact format).
+
     Args:
         topic: The debate's topic.
 
@@ -91,12 +97,15 @@ def build_judge_system_prompt(topic: str) -> str:
         "not a member of either team and must not advocate for either side.\n\n"
         "You will be given the full transcript of one question's turns, "
         "labeled by stage (opening, rebuttal, closing) and by side (FOR or "
-        "AGAINST). Review the transcript carefully and produce a verdict "
-        "naming which side argued this question better, or declare a draw "
-        "if neither side clearly won.\n\n"
-        "Give a short rationale for your verdict that cites specific turns "
-        "by their stage and side (for example, \"the FOR rebuttal\" or "
-        "\"the AGAINST closing\").\n\n"
+        "AGAINST). Review the transcript carefully and decide which side "
+        "argued this question better, or whether it is a draw.\n\n"
+        "Your response's first line must be exactly one of these five "
+        "strings, with nothing else on that line: \"FOR wins\", \"FOR wins "
+        "narrowly\", \"AGAINST wins\", \"AGAINST wins narrowly\", or "
+        "\"Draw\" -- declare a draw only if neither side clearly won. Leave "
+        "a blank line after it, then give a short rationale for your "
+        "verdict that cites specific turns by their stage and side (for "
+        "example, \"the FOR rebuttal\" or \"the AGAINST closing\").\n\n"
         f"{_WORD_LIMIT_INSTRUCTION}\n\n"
         f"{_WEB_SEARCH_INSTRUCTION}"
     )

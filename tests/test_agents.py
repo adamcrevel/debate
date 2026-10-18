@@ -102,6 +102,27 @@ def test_judge_prompt_prefers_web_search() -> None:
     assert "unverified" in prompt
 
 
+def test_judge_prompt_names_all_five_fixed_verdict_strings() -> None:
+    """The Judge prompt must name all five fixed first-line verdict strings
+    `debate.render` parses deterministically."""
+    prompt = build_judge_system_prompt(TOPIC)
+    for fixed_string in (
+        "FOR wins",
+        "FOR wins narrowly",
+        "AGAINST wins",
+        "AGAINST wins narrowly",
+        "Draw",
+    ):
+        assert f'"{fixed_string}"' in prompt
+
+
+def test_judge_prompt_requires_first_line_format() -> None:
+    """The Judge prompt must require the verdict string on the response's
+    first line, not merely mention it somewhere."""
+    prompt = build_judge_system_prompt(TOPIC).lower()
+    assert "first line" in prompt
+
+
 def test_host_prompt_includes_topic() -> None:
     """The Host prompt must interpolate the debate's topic."""
     prompt = build_host_system_prompt(TOPIC, [])

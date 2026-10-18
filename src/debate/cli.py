@@ -1,6 +1,6 @@
 """Command-line interface for the `debate` console script.
 
-Five subcommands cover the requirements this CLI implements:
+Six subcommands cover the requirements this CLI implements:
 
 * ``debate start``  -- create a new debate (Requirement 1).
 * ``debate ask``     -- run one human-supplied question through the pipeline
@@ -10,12 +10,18 @@ Five subcommands cover the requirements this CLI implements:
 * ``debate show``    -- print a debate's full persisted transcript
   (Requirement 11).
 * ``debate list``    -- list every persisted debate (Requirement 12).
+* ``debate export``  -- render a debate as gist-ready Markdown, optionally
+  publishing it as a GitHub gist (gist-export feature, Requirements 1-9).
 
-Layering boundary: this module never spawns an OS process directly -- every
-model call happens inside `engine.run_question`/`engine.generate_next_question`,
-which route through `omp_client.py`. This module only ever calls `asyncio.run`
-on those two coroutines; it never imports `subprocess` or
-`asyncio.create_subprocess_exec`.
+Layering boundary: this module never spawns an OS process directly for a
+model call -- every `omp` call happens inside
+`engine.run_question`/`engine.generate_next_question`, which route through
+`omp_client.py`. This module only ever calls `asyncio.run` on those two
+coroutines for model calls; it never imports `subprocess` or
+`asyncio.create_subprocess_exec` itself. `cmd_export`'s `--publish` path
+calls `gist_publish.publish_gist`, which is the only other module allowed
+to shell out (to `gh`, not `omp`) -- this module still never calls
+`subprocess` directly even for that.
 
 **Active-debate resolution.** Since each CLI invocation is a separate process
 with no shared in-memory state, there is no "current debate" kept between
@@ -43,8 +49,9 @@ import asyncio
 import sys
 import textwrap
 
-from . import engine
+from . import engine, render
 from .config import DebateConfig
+from .gist_publish import GistPublishError, publish_gist
 from .store import DEFAULT_DB_PATH, Debate, Store
 
 
@@ -252,8 +259,43 @@ def cmd_list(args: argparse.Namespace) -> None:
         )
 
 
+def cmd_export(args: argparse.Namespace) -> None:
+    """Handle `debate export`: render a debate as gist-ready Markdown.
+
+    Fetches the debate, its questions, and every question's turns, renders
+    them with `render.render_gist_markdown`, and either prints the result
+    to stdout or -- with `--publish` -- creates a GitHub gist containing it
+    via `gist_publish.publish_gist` and prints the resulting URL instead.
+    `--public` only makes sense together with `--publish`; passing it alone
+    is a clean usage error, not a silently-ignored flag.
+    """
+    if args.public and not args.publish:
+        print("Error: --public only makes sense together with --publish.", file=sys.stderr)
+        raise SystemExit(1)
+
+    with Store(args.db_path) as store:
+        debate = _require_debate(store, args.debate_id)
+        questions = store.list_questions(debate.id)
+        turns_by_question = {q.id: store.list_turns(q.id) for q in questions}
+
+    markdown = render.render_gist_markdown(debate, questions, turns_by_question)
+
+    if not args.publish:
+        print(markdown)
+        return
+
+    try:
+        url = publish_gist(
+            markdown, filename=f"debate-{debate.id}-transcript.md", public=args.public
+        )
+    except GistPublishError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+    print(url)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    """Build the top-level `argparse.ArgumentParser` with all five subcommands.
+    """Build the top-level `argparse.ArgumentParser` with all six subcommands.
 
     Returns:
         A fully configured parser; `main()` calls `parse_args()` on it and
@@ -378,6 +420,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_cmd = subparsers.add_parser("list", help="List every persisted debate.")
     list_cmd.set_defaults(func=cmd_list)
+
+    export = subparsers.add_parser(
+        "export", help="Render a debate as gist-ready Markdown, optionally publishing it."
+    )
+    export.add_argument("debate_id", type=int, help="The debate's id.")
+    export.add_argument(
+        "--publish",
+        action="store_true",
+        help="Create a GitHub gist (via gh) containing the rendered Markdown and print its URL.",
+    )
+    export.add_argument(
+        "--public",
+        action="store_true",
+        help="With --publish, create a public gist instead of the default secret one.",
+    )
+    export.set_defaults(func=cmd_export)
 
     return parser
 

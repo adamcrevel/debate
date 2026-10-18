@@ -109,6 +109,34 @@ uv run debate list
 
 Prints every persisted debate: id, topic, question count, and creation time.
 
+### `debate export` — render (or publish) a gist-ready transcript
+
+```sh
+uv run debate export 1
+uv run debate export 1 --publish
+uv run debate export 1 --publish --public
+```
+
+Renders debate `1`'s full transcript as one self-contained Markdown document
+— title, a results-at-a-glance table (one row per question, linking to that
+question's section, with a 🏆/🤝 verdict cell), then every question's turns
+in the order they actually ran, each labeled with a fixed emoji per stage
+(🔍 huddle, 🎤 opening, ⚔️ rebuttal, 🏁 closing), and the Judge's verdict in a
+blockquote. This is the same format a hand-built gist used earlier; it's now
+deterministic — no LLM re-derives the formatting each time.
+
+With no flags, the Markdown prints to stdout. `--publish` instead creates a
+GitHub gist (via `gh`, which must already be installed and authenticated)
+and prints its URL. Gists are **secret by default**; add `--public` to make
+one public instead (`--public` alone, without `--publish`, is a usage
+error).
+
+The verdict table's trophy/handshake cell depends on the Judge's response
+starting with one of five exact strings (`FOR wins`, `FOR wins narrowly`,
+`AGAINST wins`, `AGAINST wins narrowly`, `Draw`) — a debate run before this
+format was added, or a non-compliant Judge reply, falls back to a neutral
+"Verdict delivered — see below" cell rather than guessing a winner.
+
 ## Active debate
 
 Each `debate` invocation is a separate process — there is no interactive
@@ -122,7 +150,7 @@ scripting or driving this CLI from an LLM agent, pass `--debate-id`
 explicitly once you know one; only rely on the "most recent" fallback
 immediately after a `debate start` in the same script/session.
 
-All five subcommands accept a global `--db-path` (before the subcommand
+All six subcommands accept a global `--db-path` (before the subcommand
 name) to point at a non-default SQLite file; it defaults to
 `~/.debate/debate.db`.
 

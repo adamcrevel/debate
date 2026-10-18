@@ -1,8 +1,11 @@
 """Async wrapper around the `omp` CLI -- the only way this engine ever talks to a model.
 
-This is the ONLY module in `src/debate` allowed to import `subprocess` or use
-`asyncio.create_subprocess_exec`. Every agent turn (Requirement 8) is exactly
-one non-interactive `omp -p` subprocess call, built and awaited here.
+This is the only module in `src/debate` allowed to shell out to `omp`
+(import `subprocess` or use `asyncio.create_subprocess_exec` for that
+purpose) -- `gist_publish.py` is the only other module allowed to shell
+out at all, and only to `gh`, never to `omp`. Every agent turn
+(Requirement 8) is exactly one non-interactive `omp -p` subprocess call,
+built and awaited here.
 
 Prompt-combination strategy: `omp -p` accepts a single prompt argument, not
 separate system/user arguments. `run_omp_turn` combines them into one string

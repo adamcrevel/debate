@@ -71,6 +71,24 @@ uv run debate list
 ```
 Prints id, topic, question count, creation time for every persisted debate.
 
+### `debate export <debate_id> [--publish] [--public]` — produce a shareable transcript
+```sh
+uv run debate export 1
+uv run debate export 1 --publish
+```
+Renders a gist-ready Markdown transcript (title, results-at-a-glance table
+with a 🏆/🤝 verdict cell per question, every turn labeled with a fixed
+per-stage emoji, Judge verdict in a blockquote). With no flags, prints the
+Markdown to stdout — read it yourself, or hand it to the user directly.
+**Prefer this over hand-formatting a transcript** when asked to share or
+produce a nicely-formatted write-up of a debate; it's deterministic and
+already matches the format users have approved.
+
+`--publish` creates an actual GitHub gist (via `gh`, which must already be
+authenticated) and prints its URL instead of the Markdown — use this when
+asked to "put it in a gist" or "share it" rather than just show it. Gists
+are **secret by default**; add `--public` too if asked for a public one.
+
 ## Active-debate rule: always pass `--debate-id`
 
 A `debate` invocation is a new process each time — nothing is remembered
